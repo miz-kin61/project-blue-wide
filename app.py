@@ -82,7 +82,6 @@ def load_data():
     df['Def_Original'] = df[d_col].apply(clean_def)
     df['Cause_Info'] = df[cause_cols[0]] if cause_cols else "データなし"
 
-    # 3重円用の階層データ
     df['Def_Category'] = df['Def_Original'].replace({'ワイド': 'スプリット'})
     df['Def_Detail_3rd'] = df['Def_Original'].apply(lambda d: 'シンプル' if d == 'スプリット' else d + " ")
     df['Year'] = df['Datetime'].dt.year
@@ -111,7 +110,7 @@ with col2:
 
 # --- 📊 2. 中段：タイプ別定義型百分率棒グラフ ---
 st.divider()
-st.subheader("📊 タイプ別：定義型百分率 (Reflector除く)")
+st.subheader(f"📊 {selected_year}年：タイプ別 定義型百分率 (Reflector除く)") # ★年を追加
 
 def plot_type_bar(target_type, container):
     target_df = year_df[year_df['Type_Clean'] == target_type]
@@ -133,12 +132,11 @@ plot_type_bar("M", bar_col2)
 
 # --- 📊 3. 中段：ALL全体グラフ ---
 st.divider()
-st.subheader("🌐 ALL：全体統計")
+st.subheader(f"🌐 {selected_year}年：ALL 全体統計") # ★年を追加
 all_col1, all_col2 = st.columns(2)
 
 with all_col1:
     st.write("▼ 全体：定義型（スプリット詳細順）")
-    # 順番を指定して集計
     def_order = ["シングル", "スプリット", "ワイド", "トリプル", "クアドルプル"]
     all_def = year_df['Def_Original'].value_counts(normalize=True).reindex(def_order).fillna(0).reset_index()
     all_def.columns = ['Def', 'Percentage']
@@ -158,7 +156,7 @@ with all_col2:
     fig_all_auth.update_layout(showlegend=False, height=250, margin=dict(t=10, b=10, l=10, r=10))
     st.plotly_chart(fig_all_auth, use_container_width=True)
 
-# --- 📅 4. 下段：特異日カレンダー (復活！) ---
+# --- 📅 4. 下段：特異日カレンダー ---
 st.divider()
 st.subheader(f"🗓️ {selected_year}年：ワイド発生マトリクス (12x31)")
 wide_days = year_df[year_df['Def_Original'] == 'ワイド'].groupby(['Month', 'Day']).size().unstack(fill_value=0)
@@ -171,7 +169,8 @@ st.plotly_chart(fig_cal, use_container_width=True)
 
 # --- 📜 5. 最下段：タイムライン・ログ ---
 st.divider()
-st.subheader("📜 タイムライン・ログ")
+st.subheader(f"📜 {selected_year}年：タイムライン・ログ")
+
 log_display = pd.DataFrame({
     '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
@@ -179,9 +178,16 @@ log_display = pd.DataFrame({
     '権威': year_df['Auth_Clean'],
     'トリガー': year_df['Cause_Info']
 })
+
 def style_log(row):
     styles = [''] * len(row)
     if row['Type'] in color_map: styles[1] = f'background-color: {color_map[row["Type"]]}; color: white; font-weight: bold;'
     if row['定義型'] == 'ワイド': styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold;'
     return styles
-st.dataframe(log_display.style.apply(style_log, axis=1), use_container_width=False, height=400)
+
+# 表のスタイルを設定（文字の折り返しを追加）
+styled_df = log_display.style.apply(style_log, axis=1)
+styled_df = styled_df.set_properties(subset=['トリガー'], **{'white-space': 'normal'})
+
+# hide_index=True で左の列番号を消去！ use_container_width=Trueで横幅を広々と使います。
+st.dataframe(styled_df, hide_index=True, use_container_width=True, height=500)
