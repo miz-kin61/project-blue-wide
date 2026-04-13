@@ -1,7 +1,8 @@
 # =====================================================================
 # 🌌 Project Blue Wide - Time Machine Dashboard
-# 📅 最終更新: 2026年4月14日 03:20
-# 💡 バージョン: V14 (滞在時間表示 & 天体名1文字短縮 & センターバーコード)
+# 📅 最終更新: 2026年4月14日 03:50
+# 💡 バージョン: V16 (グラフ完全復活 & 滞在時間 & 1文字トリガー対応)
+# 📝 メモ: 1.93M行のマスターファイル読込に最適化。
 # =====================================================================
 
 import streamlit as st
@@ -9,7 +10,7 @@ import pandas as pd
 import plotly.express as px
 
 # --- ページ設定 ---
-st.set_page_config(page_title="Project Blue Wide - V14", layout="wide", page_icon="🌌")
+st.set_page_config(page_title="Project Blue Wide - Master V16", layout="wide", page_icon="🌌")
 
 # --- 🔐 秘密基地の鍵 ---
 def check_password():
@@ -21,7 +22,7 @@ def check_password():
     with col2:
         pwd = st.text_input("Access Code", type="password")
         if st.button("System Login"):
-            if pwd == "Bwide": # ログインコード
+            if pwd == "Bwide": # パスワード
                 st.session_state["password_correct"] = True
                 st.rerun()
             else: st.error("Access Denied.")
@@ -48,7 +49,7 @@ def clean_type(t):
     if 'projector' in t_str or 'p' in t_str: return 'P'
     if 'manifestor' in t_str or 'm' in t_str: return 'M'
     if 'reflector' in t_str or 'r' in t_str: return 'R'
-    return '不明(タイプ)'
+    return '不明'
 
 def clean_auth(a):
     a_str = str(a).lower()
@@ -58,7 +59,7 @@ def clean_auth(a):
     if 'heart' in a_str or 'ego' in a_str or 'エゴ' in a_str: return 'エゴ'
     if 'g' in a_str or 'self' in a_str: return 'G'
     if 'mental' in a_str or 'environment' in a_str or '環境' in a_str: return '環境'
-    if 'none' in a_str or 'lunar' in a_str or '月' in a_str or 'nan' in a_str or 'なし' in a_str or 'outer' in a_str: return '月（の周期）'
+    if 'none' in a_str or 'lunar' in a_str or '月' in a_str: return '月（の周期）'
     return '権威なし'
 
 def clean_def(d):
@@ -68,128 +69,153 @@ def clean_def(d):
     if 'triple' in d_str: return 'トリプル'
     if 'quad' in d_str: return 'クアドルプル'
     if 'simple' in d_str or 'split' in d_str: return 'スプリット'
-    if 'none' in d_str or 'nan' in d_str or 'なし' in d_str: return '定義なし'
-    return '不明(定義)'
+    if 'none' in d_str or 'nan' in d_str or 'なし' in d_str or 'reflector' in d_str: return '定義なし'
+    return '不明'
 
 def make_center_barcode(row):
     c_map = [
-        ('Head', '頭', '頭脳'), ('Ajna', 'Aji', '思考'), ('Throat', '喉', '表現'),
-        ('G', 'Ｇ', '自己'), ('Heart', 'エ', '意志'), ('Sacral', '仙', '生命力'),
-        ('Spleen', '脾', '直感'), ('SolarPlexus', '感', '感情'), ('Root', 'ル', '活力')
+        ('Head', '頭'), ('Ajna', 'Aji'), ('Throat', '喉'), ('G', 'Ｇ'),
+        ('Heart', 'エ'), ('Sacral', '仙'), ('Spleen', '脾'),
+        ('SolarPlexus', '感'), ('Root', 'ル')
     ]
     barcode = []
-    for eng, short, jpn in c_map:
-        if eng in row: is_on = (row[eng] == 1)
-        else: is_on = (jpn in str(row.get('Centers', '')))
+    for col, short in c_map:
+        is_on = (row.get(col) == 1)
         barcode.append(short if is_on else '・')
     return " ".join(barcode)
 
-# ★ 天体名の超圧縮辞書 (1文字・略称)
-p_dict = {
-    'Sun': '太', 'Earth': '地', 'Moon': '月', 'NorthNode': 'NN', 'SouthNode': 'SN',
-    'Mercury': '水', 'Venus': '金', 'Mars': '火', 'Jupiter': '木',
-    'Saturn': '土', 'Uranus': '天', 'Neptune': '海', 'Pluto': '冥', 'Chiron': 'キ'
-}
-
 @st.cache_data
 def load_data():
-    # 統合済みマスターファイル、もしくは現在の辞書ファイルを指定
-    # (ファイル名が HD_Master_Archive_1900_2043.csv の場合は適宜書き換えてください)
-    df = pd.read_csv('HD_Special_Dictionary.csv') 
-    
-    jst_cols = [c for c in df.columns if 'jst' in c.lower() or '日本時間' in c]
-    time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
-    t_col = jst_cols[0] if jst_cols else (time_cols[0] if time_cols else df.columns[0])
-    
-    df['Datetime'] = pd.to_datetime(df[t_col])
+    # ★ 統合完了したマスターファイルを指定 (ファイル名注意)
+    try:
+        df = pd.read_csv('HD_Master_Archive_1900_2043.csv')
+    except:
+        # まだ統合が終わっていない場合の予備
+        df = pd.read_csv('HD_Special_Dictionary.csv') 
+
+    df['Datetime'] = pd.to_datetime(df['JST_Time'])
     df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
 
-    # --- ⏳ 滞在時間の計算 (次の行との差分) ---
-    # 最後の行は便宜上 0分 または 1分 とします
+    # ⏳ 滞在時間の計算
     df['Duration_Min'] = df['Datetime'].diff().shift(-1).dt.total_seconds() / 60
     df['Duration_Min'] = df['Duration_Min'].fillna(1).astype(int)
 
-    type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
-    auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
-    def_cols = [c for c in df.columns if 'def' in c.lower() or '定義' in c]
-    chan_cols = [c for c in df.columns if 'channel' in c.lower() or 'チャネル' in c]
+    # データクリーニング
+    df['Type_Clean'] = df['Type'].apply(clean_type)
+    df['Auth_Clean'] = df['Authority'].apply(clean_auth)
+    df['Def_Clean'] = df['Definition'].apply(clean_def)
     
-    df['Type_Clean'] = df[type_cols[0] if type_cols else df.columns[1]].apply(clean_type)
-    df['Auth_Clean'] = df[auth_cols[0] if auth_cols else df.columns[2]].apply(clean_auth)
-    df['Def_Original'] = df[def_cols[0] if def_cols else df.columns[3]].apply(clean_def)
-    df['Channels_Info'] = df[chan_cols[0]] if chan_cols else "データなし"
-    df['Def_Category'] = df['Def_Original'].replace({'ワイド': 'スプリット'})
-    df['Def_Detail_3rd'] = df['Def_Original'].apply(lambda d: 'シンプル' if d == 'スプリット' else str(d) + " ")
-    
+    # グラフ用カテゴリ
+    df['Def_Category'] = df['Def_Clean']
+    df['Def_Detail_3rd'] = df['Definition'].apply(lambda d: 'ワイド' if 'Wide' in str(d) else ('シンプル' if 'Simple' in str(d) else ' '))
+
     df['Year'] = df['Datetime'].dt.year
-    df['Month'] = df['Datetime'].dt.month
-    df['Day'] = df['Datetime'].dt.day
     df['Decade'] = (df['Year'] // 10) * 10 
     df['Center_Barcode'] = df.apply(make_center_barcode, axis=1)
-
-    # --- 🕵️‍♂️ 惑星トリガー (超圧縮版) ---
-    # もしCSVに既に Trigger 列があるならそれを使うが、無ければここで生成
-    if 'Trigger' in df.columns:
-        # 既に列がある場合も、表示用に日本語1文字に置換
-        df['Planet_Trigger'] = df['Trigger'] # 本来はMaster Forge側で1文字にするのがベスト
-    else:
-        planet_cols = [c for c in df.columns if c.startswith('P_') or c.startswith('D_')]
-        if planet_cols:
-            triggers = ["初期状態"]
-            for i in range(1, len(df)):
-                prev, curr, moved = df.iloc[i-1], df.iloc[i], []
-                for c in planet_cols:
-                    if prev[c] != curr[c]:
-                        gate = str(curr[c]).split('.')[0]
-                        prefix = "赤" if c.startswith('D_') else "黒"
-                        moved.append(f"{prefix}{p_dict.get(c.split('_')[1], '')}inG{gate}")
-                triggers.append(" & ".join(moved) if moved else "変化なし")
-            df['Planet_Trigger'] = triggers
-        else:
-            df['Planet_Trigger'] = "データなし"
 
     return df
 
 df = load_data()
 
-# --- 📊 グラフ職人 (省略) ---
+# ==========================================
+# 📊 グラフ描画職人（完全復活！）
+# ==========================================
 def draw_sunbursts(target_df):
     col1, col2 = st.columns(2)
     with col1:
+        st.write("▼ タイプ × 権威")
         sb1 = target_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='count')
+        sb1['sort_val'] = sb1['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
+        sb1 = sb1.sort_values('sort_val').drop(columns=['sort_val'])
         fig1 = px.sunburst(sb1, path=['Type_Clean', 'Auth_Clean'], values='count', color='Type_Clean', color_discrete_map=color_map)
         st.plotly_chart(fig1, use_container_width=True)
     with col2:
+        st.write("▼ タイプ × 定義カテゴリ")
         sb2 = target_df.groupby(['Type_Clean', 'Def_Category', 'Def_Detail_3rd']).size().reset_index(name='count')
+        sb2['sort_val'] = sb2['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
+        sb2 = sb2.sort_values('sort_val').drop(columns=['sort_val'])
         fig2 = px.sunburst(sb2, path=['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], values='count', color='Type_Clean', color_discrete_map=color_map)
         st.plotly_chart(fig2, use_container_width=True)
 
+def draw_type_bars(target_df):
+    def plot_type_bar(target_type, container):
+        t_df = target_df[target_df['Type_Clean'] == target_type]
+        if t_df.empty: return
+        counts = t_df['Def_Clean'].value_counts(normalize=True).reset_index()
+        counts.columns = ['Def', 'Percentage']
+        counts['Percentage'] *= 100
+        fig = px.bar(counts, y='Def', x='Percentage', orientation='h', title=f"{target_type} の定義型分布",
+                     text=counts['Percentage'].apply(lambda x: f'{x:.1f}%'), color='Def', color_discrete_map=color_map)
+        fig.update_layout(showlegend=False, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title=None)
+        container.plotly_chart(fig, use_container_width=True)
+    c1, c2 = st.columns(2)
+    plot_type_bar("MG", c1)
+    plot_type_bar("PG", c2)
+    plot_type_bar("P", c1)
+    plot_type_bar("M", c2)
+
+def draw_all_stats(target_df):
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("▼ 全体：定義型（詳細順）")
+        def_order = ["シングル", "スプリット", "ワイド", "トリプル", "クアドルプル", "定義なし"]
+        all_def = target_df['Def_Clean'].value_counts(normalize=True).reindex(def_order).fillna(0).reset_index()
+        all_def.columns = ['Def', 'Percentage']
+        all_def['Percentage'] *= 100
+        fig_def = px.bar(all_def, x='Percentage', y='Def', orientation='h', text=all_def['Percentage'].apply(lambda x: f'{x:.1f}%'),
+                         color='Def', color_discrete_map=color_map)
+        fig_def.update_layout(showlegend=False, height=250, margin=dict(t=10, b=10, l=10, r=10))
+        st.plotly_chart(fig_def, use_container_width=True)
+    with c2:
+        st.write("▼ 全体：権威")
+        all_auth = target_df['Auth_Clean'].value_counts(normalize=True).reset_index()
+        all_auth.columns = ['Auth', 'Percentage']
+        all_auth['Percentage'] *= 100
+        fig_auth = px.bar(all_auth, x='Percentage', y='Auth', orientation='h', text=all_auth['Percentage'].apply(lambda x: f'{x:.1f}%'),
+                          color='Auth', color_discrete_map=color_map)
+        fig_auth.update_layout(showlegend=False, height=250, margin=dict(t=10, b=10, l=10, r=10))
+        st.plotly_chart(fig_auth, use_container_width=True)
+
 # ==========================================
-# 🪐 UI: 年代/年 選択
+# 🪐 UI: 年代 / 年 選択
 # ==========================================
-st.title("🌌 Project Blue Wide - V14")
+st.title("🌌 Project Blue Wide - V16")
 decades = sorted(df['Decade'].unique())
 selected_decade = st.selectbox("🪐 観測年代 (Decade)", decades, index=len(decades)-1)
 decade_df = df[df['Decade'] == selected_decade]
 
 years_in_dec = sorted(decade_df['Year'].unique())
-selected_year = st.radio("▼ 観測年", years_in_dec, index=len(years_in_dec)-1, horizontal=True)
+selected_year = st.radio("▼ 観測年を選択", years_in_dec, index=len(years_in_dec)-1, horizontal=True)
 year_df = df[df['Year'] == selected_year]
 
-# --- 📊 サマリー表示 ---
-with st.expander(f"📊 {selected_year}年の統計を表示", expanded=False):
-    draw_sunbursts(year_df)
+# --- 📊 統計表示エリア ---
+st.header(f"📊 {selected_year}年：統計サマリー")
+draw_sunbursts(year_df)
+st.subheader(f"🌐 {selected_year}年：タイプ別分布 ＆ 全体統計")
+draw_type_bars(year_df)
+draw_all_stats(year_df)
 
-# --- 📜 究極のタイムライン ---
-st.subheader(f"📜 {selected_year}年：詳細ログ")
+st.divider()
+
+# --- 🗓️ マトリクス ---
+st.subheader(f"🗓️ {selected_year}年：ワイド発生マトリクス (12x31)")
+wide_days = year_df[year_df['Def_Clean'] == 'ワイド'].groupby([year_df['Datetime'].dt.month, year_df['Datetime'].dt.day]).size().unstack(fill_value=0)
+cal_matrix = wide_days.reindex(index=range(1, 13), columns=range(1, 32)).fillna(0)
+fig_cal = px.imshow(cal_matrix, labels=dict(x="日", y="月", color="ワイド"), x=list(range(1, 32)), y=list(range(1, 13)),
+                    color_continuous_scale=[[0, '#1E1E1E'], [1, '#00BFFF']], aspect="auto")
+fig_cal.update_yaxes(autorange="reversed", dtick=1)
+fig_cal.update_xaxes(dtick=1)
+st.plotly_chart(fig_cal, use_container_width=True)
+
+# --- 📜 タイムラインログ ---
+st.subheader(f"📜 {selected_year}年：詳細タイムライン")
 
 log_display = pd.DataFrame({
-    # ★ 日時 (○分) の形式
     '日時': year_df.apply(lambda r: f"{r['Datetime'].strftime('%m/%d %H:%M')} ({r['Duration_Min']}分)", axis=1),
     'Type': year_df['Type_Clean'],
-    '定義型': year_df['Def_Original'],
-    '天体トリガー': year_df['Planet_Trigger'],
-    'チャネル': year_df['Channels_Info'],
+    '定義型': year_df['Def_Clean'],
+    '天体トリガー': year_df['Trigger'],
+    'チャネル': year_df['Channels'],
     'センター': year_df['Center_Barcode']
 })
 
