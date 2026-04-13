@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import re # ★テキスト翻訳・圧縮用の新ツール
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Project Blue Wide - Time Machine", layout="wide", page_icon="🌌")
@@ -35,7 +34,7 @@ color_map = {
 type_order = ["MG", "PG", "P", "M", "R"]
 type_order_map = {t: i for i, t in enumerate(type_order)}
 
-# --- 🛠️ データ変換関数 ---
+# --- 🛠️ 翻訳＆変換関数 ---
 def clean_type(t):
     t_str = str(t).lower()
     if 'manifesting' in t_str or 'mg' in t_str: return 'MG'
@@ -56,65 +55,61 @@ def clean_auth(a):
     if 'none' in a_str or 'lunar' in a_str or '月' in a_str or 'nan' in a_str or 'なし' in a_str or 'outer' in a_str: return '月（の周期）'
     return '権威なし'
 
-# ★みずきさん発見のバグ修正版！（トリプルを先に判定）
 def clean_def(d):
     d_str = str(d).lower()
     if 'wide' in d_str: return 'ワイド'
     if 'single' in d_str: return 'シングル'
-    if 'triple' in d_str: return 'トリプル'       # ← スプリットに飲まれる前に救出！
-    if 'quad' in d_str: return 'クアドルプル'     # ← スプリットに飲まれる前に救出！
+    if 'triple' in d_str: return 'トリプル'
+    if 'quad' in d_str: return 'クアドルプル'
     if 'simple' in d_str or 'split' in d_str: return 'スプリット'
     if 'none' in d_str or 'nan' in d_str or 'なし' in d_str: return '定義なし'
     return '不明(定義)'
 
-# ★新兵器：天体＆ゲート自動翻訳コンバーター
-def translate_trigger(text):
-    if pd.isna(text) or str(text) == 'データなし' or str(text).strip() == '':
-        return 'データなし'
-    
-    s = str(text)
-    # 英語の天体を日本語に変換
-    trans = {
-        r'\bsun\b': '太陽', r'\bearth\b': '地球', r'\bmoon\b': '月',
-        r'\bmercury\b': '水星', r'\bvenus\b': '金星', r'\bmars\b': '火星',
-        r'\bjupiter\b': '木星', r'\bsaturn\b': '土星', r'\buranus\b': '天王星',
-        r'\bneptune\b': '海王星', r'\bpluto\b': '冥王星',
-        r'\bnorth\s*node\b': 'ノード(北)', r'\bsouth\s*node\b': 'ノード(南)'
-    }
-    for eng, jpn in trans.items():
-        s = re.sub(eng, jpn, s, flags=re.IGNORECASE)
-        
-    # " in G 20", " in 20" などの無駄なスペースを消して "inG20" に圧縮
-    s = re.sub(r'\s*in\s*g?\s*(\d+)', r'inG\1', s, flags=re.IGNORECASE)
-    return s
+# ★新兵器1：センターのバーコード化（超省スペース！）
+def make_center_barcode(row):
+    c_map = [
+        ('Head', '頭', '頭脳'), ('Ajna', 'Aji', '思考'), ('Throat', '喉', '表現'),
+        ('G', 'Ｇ', '自己'), ('Heart', 'エ', '意志'), ('Sacral', '仙', '生命力'),
+        ('Spleen', '脾', '直感'), ('SolarPlexus', '感', '感情'), ('Root', 'ル', '活力')
+    ]
+    barcode = []
+    for eng, short, jpn in c_map:
+        # 新CSVの 1/0 カラムがあればそれを使う、無ければ古いCenters列の文字を探す（互換性確保）
+        if eng in row:
+            is_on = (row[eng] == 1)
+        else:
+            is_on = (jpn in str(row.get('Centers', '')))
+        barcode.append(short if is_on else '・')
+    return " ".join(barcode)
+
+# 天体の英語→日本語辞書
+p_dict = {
+    'Sun': '太陽', 'Moon': '月', 'NorthNode': 'ノード(北)', 'SouthNode': 'ノード(南)',
+    'Mercury': '水星', 'Venus': '金星', 'Mars': '火星', 'Jupiter': '木星',
+    'Saturn': '土星', 'Uranus': '天王星', 'Neptune': '海王星', 'Pluto': '冥王星'
+}
 
 @st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
     
-    # 🕒 JST（日本時間）を最優先で探す強力なロジック
+    # 🕒 JST（日本時間）優先
     jst_cols = [c for c in df.columns if 'jst' in c.lower() or '日本時間' in c]
     time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
+    t_col = jst_cols[0] if jst_cols else (time_cols[0] if time_cols else df.columns[0])
     
-    if jst_cols: t_col = jst_cols[0]
-    elif time_cols: t_col = time_cols[0]
-    else: t_col = df.columns[0]
-        
     type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
     auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
     def_cols = [c for c in df.columns if 'def' in c.lower() or '定義' in c]
-    cause_cols = [c for c in df.columns if 'cause' in c.lower() or '原因' in c or 'チャネル' in c or 'channel' in c.lower()]
+    chan_cols = [c for c in df.columns if 'channel' in c.lower() or 'チャネル' in c]
     
     df['Datetime'] = pd.to_datetime(df[t_col])
-    df = df.dropna(subset=['Datetime']) 
+    df = df.dropna(subset=['Datetime']).sort_values('Datetime').reset_index(drop=True)
     
     df['Type_Clean'] = df[type_cols[0] if type_cols else df.columns[1]].apply(clean_type)
     df['Auth_Clean'] = df[auth_cols[0] if auth_cols else df.columns[2]].apply(clean_auth)
     df['Def_Original'] = df[def_cols[0] if def_cols else df.columns[3]].apply(clean_def)
-    
-    # 元のトリガー文と、圧縮・翻訳した新列を両方作成！
-    df['Cause_Info'] = df[cause_cols[0]] if cause_cols else "データなし"
-    df['Planet_Gate_Clean'] = df['Cause_Info'].apply(translate_trigger)
+    df['Channels_Info'] = df[chan_cols[0]] if chan_cols else "データなし"
 
     df['Def_Category'] = df['Def_Original'].replace({'ワイド': 'スプリット'})
     df['Def_Detail_3rd'] = df['Def_Original'].apply(lambda d: 'シンプル' if d == 'スプリット' else str(d) + " ")
@@ -123,12 +118,39 @@ def load_data():
     df['Month'] = df['Datetime'].dt.month
     df['Day'] = df['Datetime'].dt.day
     df['Decade'] = (df['Year'] // 10) * 10 
+
+    # ★新兵器2：センターバーコードの作成
+    df['Center_Barcode'] = df.apply(make_center_barcode, axis=1)
+
+    # ★新兵器3：名探偵アルゴリズム（惑星トリガーの差分検知）
+    planet_cols = [c for c in df.columns if c.startswith('P_') or c.startswith('D_')]
+    if planet_cols:
+        triggers = ["初期状態"]
+        for i in range(1, len(df)):
+            prev = df.iloc[i-1]
+            curr = df.iloc[i]
+            moved = []
+            for c in planet_cols:
+                if prev[c] != curr[c]:
+                    # 20.3 などの数字から、小数点より前の '20' を抽出
+                    gate = str(curr[c]).split('.')[0]
+                    # P_Sun -> 黒・太陽、D_Moon -> 赤・月 に翻訳
+                    is_red = c.startswith('D_')
+                    p_eng = c.split('_')[1]
+                    p_jpn = p_dict.get(p_eng, p_eng)
+                    color_prefix = "赤" if is_red else "黒"
+                    moved.append(f"{color_prefix}{p_jpn}inG{gate}")
+            triggers.append(" & ".join(moved) if moved else "変化なし")
+        df['Planet_Trigger'] = triggers
+    else:
+        df['Planet_Trigger'] = "惑星データ未搭載"
+
     return df
 
 df = load_data()
 
 # ==========================================
-# 📊 グラフ描画職人
+# 📊 グラフ描画職人（サンバースト・棒グラフ）
 # ==========================================
 def draw_sunbursts(target_df):
     col1, col2 = st.columns(2)
@@ -138,18 +160,15 @@ def draw_sunbursts(target_df):
         sb1 = sb1[sb1['count'] > 0]
         sb1['sort_val'] = sb1['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
         sb1 = sb1.sort_values('sort_val').drop(columns=['sort_val'])
-        
         fig1 = px.sunburst(sb1, path=['Type_Clean', 'Auth_Clean'], values='count', color='Type_Clean', color_discrete_map=color_map)
         fig1.update_layout(margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig1, use_container_width=True)
-        
     with col2:
         st.write("▼ タイプ × 定義カテゴリ × 詳細")
         sb2 = target_df.groupby(['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], dropna=False).size().reset_index(name='count')
         sb2 = sb2[sb2['count'] > 0]
         sb2['sort_val'] = sb2['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
         sb2 = sb2.sort_values('sort_val').drop(columns=['sort_val'])
-        
         fig2 = px.sunburst(sb2, path=['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], values='count', color='Type_Clean', color_discrete_map=color_map)
         fig2.update_layout(margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig2, use_container_width=True)
@@ -165,7 +184,6 @@ def draw_type_bars(target_df):
                      text=counts['Percentage'].apply(lambda x: f'{x:.1f}%'), color='Def', color_discrete_map=color_map)
         fig.update_layout(showlegend=False, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title=None)
         container.plotly_chart(fig, use_container_width=True)
-    
     c1, c2 = st.columns(2)
     plot_type_bar("MG", c1)
     plot_type_bar("PG", c2)
@@ -239,23 +257,29 @@ fig_cal.update_yaxes(autorange="reversed", dtick=1)
 fig_cal.update_xaxes(dtick=1)
 st.plotly_chart(fig_cal, use_container_width=True)
 
+# ==========================================
+# 📜 最下段：すべてを凝縮した究極のタイムライン
+# ==========================================
 st.subheader(f"📜 {selected_year}年：タイムライン・ログ")
 
-# ★新列「天体＆ゲート」を追加！
+# ★ここが究極の横幅節約レイアウト！
 log_display = pd.DataFrame({
     '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
     '定義型': year_df['Def_Original'],
     '権威': year_df['Auth_Clean'],
-    '天体＆ゲート': year_df['Planet_Gate_Clean'], # ★圧縮版
-    'トリガー詳細(元)': year_df['Cause_Info'] # ★フル版
+    '天体トリガー': year_df['Planet_Trigger'],  # ← 自動推理した「黒月inG20」
+    'チャネル': year_df['Channels_Info'],       # ← 「10-20|34-20」
+    '定義センター': year_df['Center_Barcode']   # ← 「頭 ・ 喉 Ｇ ・ 仙 ・ 感 ル」
 })
+
 def style_log(row):
     styles = [''] * len(row)
     if row['Type'] in color_map: styles[1] = f'background-color: {color_map[row["Type"]]}; color: white; font-weight: bold;'
     if row['定義型'] == 'ワイド': styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold;'
+    # センター列を等幅フォントにして、綺麗に縦を揃える
+    styles[6] = 'font-family: monospace; letter-spacing: 1px;' 
     return styles
 
 styled_df = log_display.style.apply(style_log, axis=1)
-styled_df = styled_df.set_properties(subset=['天体＆ゲート', 'トリガー詳細(元)'], **{'white-space': 'normal'})
 st.dataframe(styled_df, hide_index=True, use_container_width=True, height=500)
