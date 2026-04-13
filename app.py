@@ -1,165 +1,185 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 # --- ページ設定 ---
-st.set_page_config(page_title="Cosmic Timeline", layout="wide", page_icon="🌌")
-st.title("🌌 宇宙の設計予定表 (Cosmic Timeline)")
-st.markdown("90年間のエネルギー変化と「Wide」の軌跡を読み解く私専用辞書")
+st.set_page_config(page_title="Project Blue Wide", layout="wide", page_icon="🌌")
 
-# --- データの読み込み ---
+# --- 🔐 秘密基地の鍵（パスワード） ---
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+    if st.session_state["password_correct"]:
+        return True
+
+    st.markdown("<h1 style='text-align: center; color: #00BFFF;'>🌌 Project Blue Wide</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>- Private Cosmic Archive -</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        pwd = st.text_input("Access Code", type="password")
+        if st.button("System Login"):
+            if pwd == "blue-wide-90":  # 🔑 ここを好きなパスワードに変更してください！
+                st.session_state["password_correct"] = True
+                st.rerun()
+            else:
+                st.error("Access Denied.")
+    return False
+
+if not check_password():
+    st.stop()
+
+# --- 🛠️ 翻訳辞書（データクリーニング用） ---
+# タイプの統一
+def clean_type(t):
+    t_str = str(t).lower()
+    if 'manifesting' in t_str or 'mg' in t_str: return 'MG'
+    if 'generator' in t_str or 'pg' in t_str: return 'PG'
+    if 'projector' in t_str or 'p' in t_str: return 'P'
+    if 'manifestor' in t_str or 'm' in t_str: return 'M'
+    if 'reflector' in t_str or 'r' in t_str: return 'R'
+    return '不明'
+
+# 権威の統一（spleen を追加！）
+def clean_auth(a):
+    a_str = str(a).lower() # ←★ここで大文字を小文字に変換しています！
+    if 'solar' in a_str or 'emotional' in a_str or '感情' in a_str: return '感情'
+    if 'sacral' in a_str or '仙骨' in a_str: return '仙骨'
+    if 'splenic' in a_str or 'spleen' in a_str or '脾臓' in a_str: return '脾臓' # ←spleen追加
+    if 'heart' in a_str or 'ego' in a_str or 'エゴ' in a_str: return 'エゴ'
+    if 'g' in a_str or 'self' in a_str: return 'G'
+    if 'mental' in a_str or 'environment' in a_str or '環境' in a_str: return '環境'
+    if 'none' in a_str or 'lunar' in a_str or '月' in a_str: return '月'
+    return '不明'
+
+# 定義型の統一（Wideは青色強調のために独立させます！）
+def clean_def(d):
+    d_str = str(d).lower()
+    if 'wide' in d_str: return 'ワイド' # ★別格として抽出
+    if 'single' in d_str: return 'シングル'
+    if 'simple' in d_str or 'split' in d_str: return 'スプリット'
+    if 'triple' in d_str: return 'トリプル'
+    if 'quad' in d_str: return 'クアドルプル'
+    return '不明'
+
+
+# --- データの読み込みと整形 ---
 @st.cache_data
-def load_data():
+def load_and_clean_data():
     try:
-        # みずきさんが作成したスペシャル辞書を読み込む
         df = pd.read_csv('HD_Special_Dictionary.csv')
-        df['JST_Time'] = pd.to_datetime(df['JST_Time'])
-        df['Year'] = df['JST_Time'].dt.year
-        df['Month'] = df['JST_Time'].dt.month
+        
+        # 時間列を見つけてDatetime型にする（JST_Timeか日時の列を自動検索）
+        time_col = [c for c in df.columns if 'time' in c.lower() or '日時' in c][0]
+        df['Datetime'] = pd.to_datetime(df[time_col])
+        
+        # 列名が違っても動くように、文字を含んでいる列を探す
+        type_col = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c][0]
+        auth_col = [c for c in df.columns if 'auth' in c.lower() or '権威' in c][0]
+        def_col = [c for c in df.columns if 'def' in c.lower() or '定義' in c][0]
+        
+        # 翻訳辞書を適用
+        df['Type_Clean'] = df[type_col].apply(clean_type)
+        df['Auth_Clean'] = df[auth_col].apply(clean_auth)
+        df['Def_Clean'] = df[def_col].apply(clean_def)
+        
+        # カレンダー用に年月日の列を作成
+        df['Year'] = df['Datetime'].dt.year
+        df['Month'] = df['Datetime'].dt.month
+        df['Day'] = df['Datetime'].dt.day
+        
         return df
-    except FileNotFoundError:
-        st.error("⚠️ `HD_Special_Dictionary.csv` が見つかりません。統合コードを実行してファイルを作成してください。")
-        return pd.DataFrame() # 空のデータフレームを返す
+    except Exception as e:
+        st.error(f"データの読み込みに失敗しました。列名を確認してください。\n詳細: {e}")
+        return pd.DataFrame()
 
-df = load_data()
+df = load_and_clean_data()
 
 if not df.empty:
-    # --- 1. 年選択 ---
-    years = sorted(df['Year'].unique())
-    selected_year = st.selectbox("📅 年を選択してください", years, index=len(years)-1)
+    st.title("🌌 Project Blue Wide - Analysis Cockpit")
     
-    # 選択された年のデータを抽出
+    # 年選択
+    years = sorted(df['Year'].unique())
+    selected_year = st.selectbox("📅 観測年 (Year)", years, index=len(years)-1)
     year_df = df[df['Year'] == selected_year]
-    total_count = len(year_df)
 
-    # --- カラーパレットの定義（みずきさん指定！） ---
-    color_type = {
-        "Generator": "#FFB74D",             # 黄色に近いオレンジ
-        "Manifesting Generator": "#E57373", # 目にやさしい赤
-        "Manifestor": "#7986CB",            # 目に優しい紺色
-        "Projector": "#81C784",             # 目に優しい深めの緑色
-        "Reflector": "#BA68C8"              # 紫
+    # --- 🎨 カラーパレット設定（みずきさん指定の最強配色） ---
+    color_map = {
+        "MG": "#E53935", # 赤
+        "PG": "#FFB300", # 黄色に近いオレンジ
+        "P": "#43A047",  # 緑
+        "M": "#3949AB",  # 紫に近い青色（ロイヤルブルー）
+        "R": "#9E9E9E",  # 灰色
+        "ワイド": "#00BFFF", # ★際立つ青（アジュール）
+        "スプリット": "#B0BEC5", "シングル": "#CFD8DC", "トリプル": "#90A4AE", "クアドルプル": "#78909C",
+        "感情": "#FFCDD2", "仙骨": "#F8BBD0", "脾臓": "#E1BEE7", "エゴ": "#D1C4E9", "G": "#C5CAE9", "環境": "#B3E5FC", "月": "#B2DFDB"
     }
+    # タイプの表示順序（時計回り）
+    type_order = ["MG", "PG", "P", "M", "R"]
 
-    color_auth = {
-        "SolarPlexus": "#BCAAA4",  # 少し明るめ茶色
-        "Sacral": "#E57373",       # MGと同じ赤
-        "Splenic": "#C0CA33",      # 黄色め茶色（オリーブ系）
-        "Heart": "#E53935",        # 赤（エゴ）独立
-        "G": "#FFF176",            # やさしい黄色 独立
-        "None": "#BDBDBD"          # メンタル・リフレクター（灰色）
-    }
+    # --- 📊 1. 上段：2重円グラフ（サンバースト） ---
+    st.divider()
+    col1, col2 = st.columns(2)
 
-    # --- 2. 統計ダッシュボード ---
-    st.header(f"📊 {selected_year}年のエネルギー統計 (総変化数: {total_count}回)")
-    col1, col2, col3 = st.columns(3)
-
-    # ❶ タイプ発生率 (円グラフ)
     with col1:
-        st.subheader("タイプ分布")
-        type_counts = year_df['Type'].value_counts().reset_index()
-        type_counts.columns = ['Type', 'Count']
-        fig_type = px.pie(type_counts, values='Count', names='Type', hole=0.4, 
-                          color='Type', color_discrete_map=color_type)
-        fig_type.update_layout(margin=dict(t=20, b=20, l=0, r=0), showlegend=True)
-        st.plotly_chart(fig_type, use_container_width=True)
-
-    # ❷ 定義型分布 (スタック棒グラフ ＋ Wide単体表示)
-    with col2:
-        st.subheader("定義型分布")
-        
-        # グラフ用にデータを整形（SimpleとWideを「Split」という親カテゴリにまとめる）
-        def map_base_def(d):
-            if d in ['Simple', 'Wide']: return 'Split'
-            return d
-        
-        def map_sub_def(d):
-            if d == 'Wide': return 'Wide'
-            return 'Normal' # それ以外（Single, Simple, Triple, Quad）はNormal扱い
-
-        year_df['Base_Def'] = year_df['Definition'].apply(map_base_def)
-        year_df['Sub_Def'] = year_df['Definition'].apply(map_sub_def)
-        
-        def_counts = year_df.groupby(['Base_Def', 'Sub_Def']).size().reset_index(name='Count')
-        
-        # 色設定（通常は薄い灰色、Wideは青！）
-        color_def = {"Normal": "#E0E0E0", "Wide": "#42A5F5"}
-        
-        fig_def = px.bar(def_counts, x='Base_Def', y='Count', color='Sub_Def',
-                         color_discrete_map=color_def,
-                         category_orders={"Base_Def": ["Single", "Split", "Triple", "Quad"]})
-        fig_def.update_layout(showlegend=False, margin=dict(t=20, b=20, l=0, r=0), xaxis_title="")
-        st.plotly_chart(fig_def, use_container_width=True)
-
-        # ★ エモいポイント：Wide単体の発生率を下に表示 ★
-        wide_count = len(year_df[year_df['Definition'] == 'Wide'])
-        wide_percent = (wide_count / total_count) * 100 if total_count > 0 else 0
-        st.markdown(f"<div style='text-align: center; font-size: 1.2em; font-weight: bold; color: #42A5F5;'>"
-                    f"🔷 ワイドスプリット単体：{wide_percent:.1f}％ ({wide_count}回)</div>", unsafe_allow_html=True)
-
-    # ❸ 権威分布 (棒グラフ)
-    with col3:
-        st.subheader("権威分布")
-        auth_counts = year_df['Authority'].value_counts().reset_index()
-        auth_counts.columns = ['Authority', 'Count']
-        fig_auth = px.bar(auth_counts, x='Authority', y='Count', color='Authority',
-                          color_discrete_map=color_auth)
-        fig_auth.update_layout(showlegend=False, margin=dict(t=20, b=20, l=0, r=0), xaxis_title="")
+        st.subheader("タイプ × 権威")
+        sb_auth = year_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='Count')
+        fig_auth = px.sunburst(sb_auth, path=['Type_Clean', 'Auth_Clean'], values='Count', color='Type_Clean',
+                               color_discrete_map=color_map, category_orders={"Type_Clean": type_order})
+        fig_auth.update_layout(margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig_auth, use_container_width=True)
 
-    # --- 3. メインコンテンツ：時の流れ羅列 (ログ) ---
+    with col2:
+        st.subheader("タイプ × 定義型")
+        sb_def = year_df.groupby(['Type_Clean', 'Def_Clean']).size().reset_index(name='Count')
+        # Def_Clean（ワイドなど）にも色を適用させるためのトリック
+        fig_def = px.sunburst(sb_def, path=['Type_Clean', 'Def_Clean'], values='Count', color='Def_Clean',
+                              color_discrete_map=color_map, category_orders={"Type_Clean": type_order})
+        fig_def.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+        st.plotly_chart(fig_def, use_container_width=True)
+
+    # --- 📅 2. 中段：特異日カレンダー（基礎枠組み） ---
     st.divider()
-    st.header(f"📜 {selected_year}年 タイムラインログ")
-
-    # 月別ジャンプボタン
-    month_cols = st.columns(12)
-    selected_month = st.session_state.get('selected_month', 1)
-
-    for i, col in enumerate(month_cols):
-        with col:
-            if st.button(f"{i+1}月", key=f"btn_{i+1}"):
-                selected_month = i + 1
-                st.session_state['selected_month'] = selected_month
-
-    st.subheader(f"🔽 {selected_month}月の変化履歴")
-    month_data = year_df[year_df['Month'] == selected_month]
-
-    # 漆黒のログ表示エリアを構築
-    timeline_html = "<div style='line-height:1.8; font-family:monospace; background-color:#121212; color:#E0E0E0; padding:20px; border-radius:10px; height: 500px; overflow-y: scroll;'>"
+    st.subheader(f"🗓️ {selected_year}年 特異日マトリクス (Wide Heatmap)")
+    st.markdown("※ カレンダーの完全連動と天体トリガー表記はフェーズ2で実装します。まずはワイドの発生日を青く点灯させます。")
     
-    for index, row in month_data.iterrows():
-        time_str = row['JST_Time'].strftime("%m-%d %H:%M")
-        
-        # タイプの短縮表示と色付け
-        type_str = row['Type']
-        type_color = color_type.get(type_str, "#FFFFFF")
-        if type_str == "Manifesting Generator": short_type = "MG "
-        elif type_str == "Generator": short_type = "GEN"
-        elif type_str == "Projector": short_type = "PRO"
-        elif type_str == "Manifestor": short_type = "MAN"
-        else: short_type = "REF"
-        
-        # 定義型（Wideの太字・青文字化）
-        def_str = row['Definition']
-        if def_str == 'Wide':
-            def_html = f"<strong style='color:#42A5F5;'>Wide  </strong>"
-        else:
-            # 桁を揃えるためにスペースでパディング
-            def_html = f"{def_str:<6}"
-            
-        auth_str = row['Authority']
-        auth_color = color_auth.get(auth_str, "#FFFFFF")
-        
-        # 原因（Cause）がある場合は表示
-        cause_str = row.get('Cause', '')
-        
-        # 1行のHTMLフォーマット
-        line = (f"<span style='color:gray;'>{time_str}</span> | "
-                f"<strong style='color:{type_color};'>{short_type}</strong> | "
-                f"{def_html} | "
-                f"<span style='color:{auth_color};'>{auth_str:<11}</span> | "
-                f"<span style='color:#888888; font-size:0.9em;'>{cause_str}</span><br>")
-        timeline_html += line
+    # その日に「ワイド」が発生した回数をカウントするピボットテーブル
+    wide_df = year_df[year_df['Def_Clean'] == 'ワイド']
+    calendar_data = wide_df.groupby(['Month', 'Day']).size().unstack(fill_value=0)
+    
+    # 12ヶ月×31日の空枠を作ってマージする（2月30日などはNaNになる）
+    full_months = pd.Index(range(1, 13), name="Month")
+    full_days = pd.Index(range(1, 32), name="Day")
+    calendar_matrix = calendar_data.reindex(index=full_months, columns=full_days).fillna(0)
+    
+    # Plotlyでヒートマップを描画（青色系グラデーション）
+    fig_cal = px.imshow(calendar_matrix, 
+                        labels=dict(x="日 (Day)", y="月 (Month)", color="Wide回数"),
+                        x=full_days, y=full_months,
+                        color_continuous_scale=[[0, '#1E1E1E'], [1, '#00BFFF']], # 黒から際立つ青へ
+                        aspect="auto")
+    fig_cal.update_yaxes(autorange="reversed", dtick=1) # 1月を上に
+    fig_cal.update_xaxes(dtick=1)
+    st.plotly_chart(fig_cal, use_container_width=True)
 
-    timeline_html += "</div>"
-    st.markdown(timeline_html, unsafe_allow_html=True)
+    # --- 📝 3. 下段：整形されたタイムラインログ ---
+    st.divider()
+    st.subheader("📜 タイムライン・ログ")
+    
+    # 表示用の綺麗なデータフレームを作成
+    log_df = pd.DataFrame()
+    log_df['日時'] = year_df['Datetime'].dt.strftime('%m/%d %H:%M')
+    log_df['Type'] = year_df['Type_Clean']
+    log_df['定義型'] = year_df['Def_Clean']
+    log_df['権威'] = year_df['Auth_Clean']
+    
+    # Cause（原因）列があれば追加
+    cause_col = [c for c in df.columns if 'cause' in c.lower() or '原因' in c]
+    if cause_col:
+        log_df['トリガー'] = year_df[cause_col[0]]
+    else:
+        log_df['トリガー'] = "算出準備中"
+
+    # Streamlitの機能で、エクセルのように綺麗な表を表示（縦線ピシッと揃います）
+    st.dataframe(log_df, use_container_width=True, height=400)
