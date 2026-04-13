@@ -55,16 +55,17 @@ def clean_auth(a):
     if 'none' in a_str or 'lunar' in a_str or '月' in a_str or 'nan' in a_str or 'なし' in a_str or 'outer' in a_str: return '月（の周期）'
     return '権威なし'
 
+# ★修正版（TripleとQuadを先に救出する！）
 def clean_def(d):
     d_str = str(d).lower()
     if 'wide' in d_str: return 'ワイド'
     if 'single' in d_str: return 'シングル'
-    if 'simple' in d_str or 'split' in d_str: return 'スプリット'
-    if 'triple' in d_str: return 'トリプル'
-    if 'quad' in d_str: return 'クアドルプル'
+    if 'triple' in d_str: return 'トリプル'       # ←先に判定！
+    if 'quad' in d_str: return 'クアドルプル'     # ←先に判定！
+    if 'simple' in d_str or 'split' in d_str: return 'スプリット' # ←最後に拾う
     if 'none' in d_str or 'nan' in d_str or 'なし' in d_str: return '定義なし'
     return '不明(定義)'
-
+    
 @st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
