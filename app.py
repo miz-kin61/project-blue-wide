@@ -274,38 +274,28 @@ st.plotly_chart(fig_cal, use_container_width=True)
 # ==========================================
 # 📜 最下段：すべてを凝縮した究極のタイムライン
 # ==========================================
-# --- 📜 タイムラインログ (列順変更版) ---
-st.subheader(f"📜 {selected_year}年：詳細タイムライン")
+st.subheader(f"📜 {selected_year}年：タイムライン・ログ")
 
-# 1. データの作成（ここでの辞書の順番が表示順になります）
+# ★ 正しい変数名に修正しました！
 log_display = pd.DataFrame({
     '日時': year_df.apply(lambda r: f"{r['Datetime'].strftime('%m/%d %H:%M')} ({r['Duration_Min']}分)", axis=1),
     'Type': year_df['Type_Clean'],
-    '定義型': year_df['Def_Clean'],
+    '定義型': year_df['Def_Original'],          # ← 修正
     '定義センター': year_df['Center_Barcode'], # ← 中央へ移動
-    'チャネル': year_df['Channels'],
-    'トリガー': year_df['Trigger'],
+    'チャネル': year_df['Channels_Info'],        # ← 修正
+    'トリガー': year_df['Planet_Trigger'],       # ← 修正
     '権威': year_df['Auth_Clean']              # ← 最後に追加
 })
 
-# 2. スタイル（色付け）の適用
 def style_log(row):
-    # 列数に合わせて空のスタイルリストを作成 (今回は7列分)
     styles = [''] * len(row)
-    
-    # 1列目 (Type): 背景色
     if row['Type'] in color_map: 
         styles[1] = f'background-color: {color_map[row["Type"]]}; color: white; font-weight: bold;'
-    
-    # 2列目 (定義型): ワイドのみ青文字
     if row['定義型'] == 'ワイド': 
         styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold;'
-    
-    # 3列目 (定義センター): 等幅フォントにして縦列を揃える
+    # センター列（3列目）を等幅フォントにして、綺麗に縦を揃える
     styles[3] = 'font-family: monospace; letter-spacing: 1px;' 
-    
     return styles
 
-# 表の表示
 styled_df = log_display.style.apply(style_log, axis=1)
 st.dataframe(styled_df, hide_index=True, use_container_width=True, height=600)
