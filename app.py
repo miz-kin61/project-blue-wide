@@ -65,25 +65,30 @@ def clean_def(d):
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
     
-    # 🔍 V1の賢い「列名自動検索システム」を超強化（絶対エラー出さないマン）
+    # 🔍 列名検索（原因・チャネル列も追加！）
     time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
     type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
     auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
     def_cols = [c for c in df.columns if 'def' in c.lower() or '定義' in c]
+    cause_cols = [c for c in df.columns if 'cause' in c.lower() or '原因' in c or 'チャネル' in c or 'channel' in c.lower()]
     
-    # 見つからなかった場合は左から順に強制割り当てする安全装置
     t_col = time_cols[0] if time_cols else df.columns[0]
     ty_col = type_cols[0] if type_cols else df.columns[1]
     a_col = auth_cols[0] if auth_cols else df.columns[2]
     d_col = def_cols[0] if def_cols else df.columns[3]
     
     df['Datetime'] = pd.to_datetime(df[t_col])
-    
     df['Type_Clean'] = df[ty_col].apply(clean_type)
     df['Auth_Clean'] = df[a_col].apply(clean_auth)
     df['Def_Original'] = df[d_col].apply(clean_def)
+    
+    # 原因列があれば保存、なければ「データなし」
+    if cause_cols:
+        df['Cause_Info'] = df[cause_cols[0]]
+    else:
+        df['Cause_Info'] = "データなし"
 
-    # 3重円用の階層データ作成
+    # 3重円用の階層データ作成（パニック回避のスペース入り）
     def map_category(d):
         if d in ['ワイド', 'スプリット']: return 'スプリット'
         return d
@@ -91,14 +96,13 @@ def load_data():
     def map_detail(d):
         if d == 'ワイド': return 'ワイド'
         if d == 'スプリット': return 'シンプル'
-        return None
+        return d + " " # ★末尾にスペースを入れて親の名前と被らないようにする魔法
 
     df['Def_Category'] = df['Def_Original'].apply(map_category)
     df['Def_Detail_3rd'] = df['Def_Original'].apply(map_detail)
     df['Year'] = df['Datetime'].dt.year
     return df
 
-# ★これ！この1行が消えていたのが原因でした！！
 df = load_data()
 
 # 🎯 デフォルト年を2026年に設定
@@ -108,8 +112,6 @@ default_index = years.index(default_year)
 selected_year = st.selectbox("📅 観測年", years, index=default_index)
 
 year_df = df[df['Year'] == selected_year]
-
-# 並び替え用
 type_order_map = {t: i for i, t in enumerate(type_order)}
 
 # --- 📊 1. 上段：2重/3重円グラフ ---
@@ -141,11 +143,13 @@ with col2:
 st.divider()
 st.subheader("📜 タイムライン・ログ")
 
+# 表示用データに「原因」を復活
 log_display = pd.DataFrame({
     '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
     '定義型': year_df['Def_Original'],
-    '権威': year_df['Auth_Clean']
+    '権威': year_df['Auth_Clean'],
+    'トリガー(原因)': year_df['Cause_Info']
 })
 
 def style_log(row):
@@ -157,4 +161,5 @@ def style_log(row):
         styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold; font-size: 1.1em;'
     return styles
 
-st.dataframe(log_display.style.apply(style_log, axis=1), use_container_width=True, height=500)
+# use_container_width=False にして、無駄な横幅の広がりを抑える
+st.dataframe(log_display.style.apply(style_log, axis=1), use_container_width=False, height=500)
