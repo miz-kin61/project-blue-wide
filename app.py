@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import re # ★テキスト翻訳・圧縮用の新ツール
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Project Blue Wide - Time Machine", layout="wide", page_icon="🌌")
@@ -55,31 +56,49 @@ def clean_auth(a):
     if 'none' in a_str or 'lunar' in a_str or '月' in a_str or 'nan' in a_str or 'なし' in a_str or 'outer' in a_str: return '月（の周期）'
     return '権威なし'
 
-# ★修正版（TripleとQuadを先に救出する！）
+# ★みずきさん発見のバグ修正版！（トリプルを先に判定）
 def clean_def(d):
     d_str = str(d).lower()
     if 'wide' in d_str: return 'ワイド'
     if 'single' in d_str: return 'シングル'
-    if 'triple' in d_str: return 'トリプル'       # ←先に判定！
-    if 'quad' in d_str: return 'クアドルプル'     # ←先に判定！
-    if 'simple' in d_str or 'split' in d_str: return 'スプリット' # ←最後に拾う
+    if 'triple' in d_str: return 'トリプル'       # ← スプリットに飲まれる前に救出！
+    if 'quad' in d_str: return 'クアドルプル'     # ← スプリットに飲まれる前に救出！
+    if 'simple' in d_str or 'split' in d_str: return 'スプリット'
     if 'none' in d_str or 'nan' in d_str or 'なし' in d_str: return '定義なし'
     return '不明(定義)'
+
+# ★新兵器：天体＆ゲート自動翻訳コンバーター
+def translate_trigger(text):
+    if pd.isna(text) or str(text) == 'データなし' or str(text).strip() == '':
+        return 'データなし'
     
+    s = str(text)
+    # 英語の天体を日本語に変換
+    trans = {
+        r'\bsun\b': '太陽', r'\bearth\b': '地球', r'\bmoon\b': '月',
+        r'\bmercury\b': '水星', r'\bvenus\b': '金星', r'\bmars\b': '火星',
+        r'\bjupiter\b': '木星', r'\bsaturn\b': '土星', r'\buranus\b': '天王星',
+        r'\bneptune\b': '海王星', r'\bpluto\b': '冥王星',
+        r'\bnorth\s*node\b': 'ノード(北)', r'\bsouth\s*node\b': 'ノード(南)'
+    }
+    for eng, jpn in trans.items():
+        s = re.sub(eng, jpn, s, flags=re.IGNORECASE)
+        
+    # " in G 20", " in 20" などの無駄なスペースを消して "inG20" に圧縮
+    s = re.sub(r'\s*in\s*g?\s*(\d+)', r'inG\1', s, flags=re.IGNORECASE)
+    return s
+
 @st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
     
-    # 🕒 UT排除！JST（日本時間）を最優先で探す強力なロジック
+    # 🕒 JST（日本時間）を最優先で探す強力なロジック
     jst_cols = [c for c in df.columns if 'jst' in c.lower() or '日本時間' in c]
     time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
     
-    if jst_cols:
-        t_col = jst_cols[0] # JSTがあれば絶対それを優先
-    elif time_cols:
-        t_col = time_cols[0]
-    else:
-        t_col = df.columns[0]
+    if jst_cols: t_col = jst_cols[0]
+    elif time_cols: t_col = time_cols[0]
+    else: t_col = df.columns[0]
         
     type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
     auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
@@ -87,15 +106,17 @@ def load_data():
     cause_cols = [c for c in df.columns if 'cause' in c.lower() or '原因' in c or 'チャネル' in c or 'channel' in c.lower()]
     
     df['Datetime'] = pd.to_datetime(df[t_col])
-    df = df.dropna(subset=['Datetime']) # 日付エラー防止
+    df = df.dropna(subset=['Datetime']) 
     
     df['Type_Clean'] = df[type_cols[0] if type_cols else df.columns[1]].apply(clean_type)
     df['Auth_Clean'] = df[auth_cols[0] if auth_cols else df.columns[2]].apply(clean_auth)
     df['Def_Original'] = df[def_cols[0] if def_cols else df.columns[3]].apply(clean_def)
+    
+    # 元のトリガー文と、圧縮・翻訳した新列を両方作成！
     df['Cause_Info'] = df[cause_cols[0]] if cause_cols else "データなし"
+    df['Planet_Gate_Clean'] = df['Cause_Info'].apply(translate_trigger)
 
     df['Def_Category'] = df['Def_Original'].replace({'ワイド': 'スプリット'})
-    # パニック回避用のスペース付与ハック
     df['Def_Detail_3rd'] = df['Def_Original'].apply(lambda d: 'シンプル' if d == 'スプリット' else str(d) + " ")
     
     df['Year'] = df['Datetime'].dt.year
@@ -107,7 +128,7 @@ def load_data():
 df = load_data()
 
 # ==========================================
-# 📊 グラフ描画職人（エラー回避ロジック完全復活版）
+# 📊 グラフ描画職人
 # ==========================================
 def draw_sunbursts(target_df):
     col1, col2 = st.columns(2)
@@ -115,7 +136,6 @@ def draw_sunbursts(target_df):
         st.write("▼ タイプ × 権威")
         sb1 = target_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='count')
         sb1 = sb1[sb1['count'] > 0]
-        # ★エラー回避：強制的にMG→PGの順に並び替える
         sb1['sort_val'] = sb1['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
         sb1 = sb1.sort_values('sort_val').drop(columns=['sort_val'])
         
@@ -127,7 +147,6 @@ def draw_sunbursts(target_df):
         st.write("▼ タイプ × 定義カテゴリ × 詳細")
         sb2 = target_df.groupby(['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], dropna=False).size().reset_index(name='count')
         sb2 = sb2[sb2['count'] > 0]
-        # ★エラー回避：強制的にMG→PGの順に並び替える
         sb2['sort_val'] = sb2['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
         sb2 = sb2.sort_values('sort_val').drop(columns=['sort_val'])
         
@@ -221,12 +240,15 @@ fig_cal.update_xaxes(dtick=1)
 st.plotly_chart(fig_cal, use_container_width=True)
 
 st.subheader(f"📜 {selected_year}年：タイムライン・ログ")
+
+# ★新列「天体＆ゲート」を追加！
 log_display = pd.DataFrame({
-    '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'), # ★これでJSTの月/日 時:分が出力されます！
+    '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
     '定義型': year_df['Def_Original'],
     '権威': year_df['Auth_Clean'],
-    'トリガー': year_df['Cause_Info']
+    '天体＆ゲート': year_df['Planet_Gate_Clean'], # ★圧縮版
+    'トリガー詳細(元)': year_df['Cause_Info'] # ★フル版
 })
 def style_log(row):
     styles = [''] * len(row)
@@ -235,5 +257,5 @@ def style_log(row):
     return styles
 
 styled_df = log_display.style.apply(style_log, axis=1)
-styled_df = styled_df.set_properties(subset=['トリガー'], **{'white-space': 'normal'})
+styled_df = styled_df.set_properties(subset=['天体＆ゲート', 'トリガー詳細(元)'], **{'white-space': 'normal'})
 st.dataframe(styled_df, hide_index=True, use_container_width=True, height=500)
