@@ -32,7 +32,6 @@ color_map = {
 type_order = ["MG", "PG", "P", "M", "R"]
 
 # --- 🛠️ データ変換関数 ---
-# ※エラー回避のため「不明」をそれぞれ区別しました
 def clean_type(t):
     t_str = str(t).lower()
     if 'manifesting' in t_str or 'mg' in t_str: return 'MG'
@@ -63,24 +62,28 @@ def clean_def(d):
     return '不明(定義)'
 
 @st.cache_data
-@st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
     
-    # 🔍 V1の賢い「列名自動検索システム」を復活！
-    time_col = [c for c in df.columns if 'time' in c.lower() or '日時' in c][0]
-    type_col = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c][0]
-    auth_col = [c for c in df.columns if 'auth' in c.lower() or '権威' in c][0]
-    def_col = [c for c in df.columns if 'def' in c.lower() or '定義' in c][0]
+    # 🔍 V1の賢い「列名自動検索システム」を超強化（絶対エラー出さないマン）
+    time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
+    type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
+    auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
+    def_cols = [c for c in df.columns if 'def' in c.lower() or '定義' in c]
     
-    df['Datetime'] = pd.to_datetime(df[time_col])
+    # 見つからなかった場合は左から順に強制割り当てする安全装置
+    t_col = time_cols[0] if time_cols else df.columns[0]
+    ty_col = type_cols[0] if type_cols else df.columns[1]
+    a_col = auth_cols[0] if auth_cols else df.columns[2]
+    d_col = def_cols[0] if def_cols else df.columns[3]
     
-    # 基本の変換（検索した列名を使って正確に翻訳！）
-    df['Type_Clean'] = df[type_col].apply(clean_type)
-    df['Auth_Clean'] = df[auth_col].apply(clean_auth)
-    df['Def_Original'] = df[def_col].apply(clean_def)
+    df['Datetime'] = pd.to_datetime(df[t_col])
+    
+    df['Type_Clean'] = df[ty_col].apply(clean_type)
+    df['Auth_Clean'] = df[a_col].apply(clean_auth)
+    df['Def_Original'] = df[d_col].apply(clean_def)
 
-    # ❶-(2) 3重円用の階層データ作成ロジック
+    # 3重円用の階層データ作成
     def map_category(d):
         if d in ['ワイド', 'スプリット']: return 'スプリット'
         return d
@@ -92,11 +95,13 @@ def load_data():
 
     df['Def_Category'] = df['Def_Original'].apply(map_category)
     df['Def_Detail_3rd'] = df['Def_Original'].apply(map_detail)
-    
     df['Year'] = df['Datetime'].dt.year
     return df
 
-# 🎯 デフォルト年を2026年に設定（なければ最新年）
+# ★これ！この1行が消えていたのが原因でした！！
+df = load_data()
+
+# 🎯 デフォルト年を2026年に設定
 years = sorted(df['Year'].unique())
 default_year = 2026 if 2026 in years else years[-1]
 default_index = years.index(default_year)
@@ -104,7 +109,7 @@ selected_year = st.selectbox("📅 観測年", years, index=default_index)
 
 year_df = df[df['Year'] == selected_year]
 
-# 並び替え用のマッピング（エラー回避用）
+# 並び替え用
 type_order_map = {t: i for i, t in enumerate(type_order)}
 
 # --- 📊 1. 上段：2重/3重円グラフ ---
@@ -113,7 +118,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("タイプ × 権威")
     sb1 = year_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='count')
-    sb1 = sb1[sb1['count'] > 0] # 0件のデータを除外
+    sb1 = sb1[sb1['count'] > 0]
     sb1['sort_val'] = sb1['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
     sb1 = sb1.sort_values('sort_val').drop(columns=['sort_val'])
     
@@ -123,7 +128,6 @@ with col1:
 
 with col2:
     st.subheader("タイプ × 定義カテゴリ × 詳細")
-    # dropna=False にすることで、3層目がない（Noneの）データも消さずに2重円として描画させます！
     sb2 = year_df.groupby(['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], dropna=False).size().reset_index(name='count')
     sb2 = sb2[sb2['count'] > 0]
     sb2['sort_val'] = sb2['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
@@ -137,15 +141,13 @@ with col2:
 st.divider()
 st.subheader("📜 タイムライン・ログ")
 
-# 表示用データの作成
 log_display = pd.DataFrame({
     '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
-    '定義型': year_df['Def_Original'], # ログは元の詳細名を表示
+    '定義型': year_df['Def_Original'],
     '権威': year_df['Auth_Clean']
 })
 
-# ❷ ログの着色ロジック
 def style_log(row):
     styles = [''] * len(row)
     t = row['Type']
