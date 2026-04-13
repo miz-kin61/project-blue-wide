@@ -118,26 +118,43 @@ if not df.empty:
     # タイプの表示順序（時計回り）
     type_order = ["MG", "PG", "P", "M", "R"]
 
-    # --- 📊 1. 上段：2重円グラフ（サンバースト） ---
+# --- 📊 1. 上段：2重円グラフ（サンバースト） ---
     st.divider()
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("タイプ × 権威")
         sb_auth = year_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='Count')
-        fig_auth = px.sunburst(sb_auth, path=['Type_Clean', 'Auth_Clean'], values='Count', color='Type_Clean',
-                               color_discrete_map=color_map, category_orders={"Type_Clean": type_order})
-        fig_auth.update_layout(margin=dict(t=10, b=10, l=10, r=10))
-        st.plotly_chart(fig_auth, use_container_width=True)
+        
+        # ★エラー回避：オプションを使わず、データ自体をMG→PG→Pの順に並び替える作戦
+        sb_auth['Type_Clean'] = pd.Categorical(sb_auth['Type_Clean'], categories=type_order, ordered=True)
+        sb_auth = sb_auth.sort_values('Type_Clean')
+        
+        try:
+            # category_orders を削除しました！
+            fig_auth = px.sunburst(sb_auth, path=['Type_Clean', 'Auth_Clean'], values='Count', color='Type_Clean',
+                                   color_discrete_map=color_map)
+            fig_auth.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_auth, use_container_width=True)
+        except Exception as e:
+            st.error(f"エラーの正体（グラフ1）: {e}") # もしまたエラーが出ても、画面に直接表示させます！
 
     with col2:
         st.subheader("タイプ × 定義型")
         sb_def = year_df.groupby(['Type_Clean', 'Def_Clean']).size().reset_index(name='Count')
-        # Def_Clean（ワイドなど）にも色を適用させるためのトリック
-        fig_def = px.sunburst(sb_def, path=['Type_Clean', 'Def_Clean'], values='Count', color='Def_Clean',
-                              color_discrete_map=color_map, category_orders={"Type_Clean": type_order})
-        fig_def.update_layout(margin=dict(t=10, b=10, l=10, r=10))
-        st.plotly_chart(fig_def, use_container_width=True)
+        
+        # ★こちらも同様にデータを並び替え
+        sb_def['Type_Clean'] = pd.Categorical(sb_def['Type_Clean'], categories=type_order, ordered=True)
+        sb_def = sb_def.sort_values('Type_Clean')
+        
+        try:
+            # category_orders を削除しました！
+            fig_def = px.sunburst(sb_def, path=['Type_Clean', 'Def_Clean'], values='Count', color='Def_Clean',
+                                  color_discrete_map=color_map)
+            fig_def.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_def, use_container_width=True)
+        except Exception as e:
+            st.error(f"エラーの正体（グラフ2）: {e}")
 
     # --- 📅 2. 中段：特異日カレンダー（基礎枠組み） ---
     st.divider()
