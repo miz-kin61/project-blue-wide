@@ -5,7 +5,7 @@ import plotly.express as px
 # --- ページ設定 ---
 st.set_page_config(page_title="Project Blue Wide", layout="wide", page_icon="🌌")
 
-# --- 🔐 秘密基地の鍵（パスワード） ---
+# --- 🔐 秘密基地の鍵 ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -26,7 +26,8 @@ if not check_password(): st.stop()
 # --- 🎨 カラーパレット定義 ---
 color_map = {
     "MG": "#E53935", "PG": "#FFB300", "P": "#43A047", 
-    "M": "#3949AB", "R": "#9E9E9E", "ワイド": "#00BFFF", "シンプル": "#B0BEC5",
+    "M": "#3949AB", "R": "#9E9E9E", "ワイド": "#00BFFF", "スプリット": "#B0BEC5", "シンプル": "#B0BEC5",
+    "シングル": "#CFD8DC", "トリプル": "#90A4AE", "クアドルプル": "#78909C",
     "感情": "#FFCDD2", "仙骨": "#F8BBD0", "脾臓": "#E1BEE7", "エゴ": "#D1C4E9", "G": "#C5CAE9", "環境": "#B3E5FC", "月": "#B2DFDB"
 }
 type_order = ["MG", "PG", "P", "M", "R"]
@@ -64,8 +65,6 @@ def clean_def(d):
 @st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
-    
-    # 🔍 列名検索（原因・チャネル列も追加！）
     time_cols = [c for c in df.columns if 'time' in c.lower() or '日時' in c]
     type_cols = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c]
     auth_cols = [c for c in df.columns if 'auth' in c.lower() or '権威' in c]
@@ -81,85 +80,108 @@ def load_data():
     df['Type_Clean'] = df[ty_col].apply(clean_type)
     df['Auth_Clean'] = df[a_col].apply(clean_auth)
     df['Def_Original'] = df[d_col].apply(clean_def)
-    
-    # 原因列があれば保存、なければ「データなし」
-    if cause_cols:
-        df['Cause_Info'] = df[cause_cols[0]]
-    else:
-        df['Cause_Info'] = "データなし"
+    df['Cause_Info'] = df[cause_cols[0]] if cause_cols else "データなし"
 
-    # 3重円用の階層データ作成（パニック回避のスペース入り）
-    def map_category(d):
-        if d in ['ワイド', 'スプリット']: return 'スプリット'
-        return d
-
-    def map_detail(d):
-        if d == 'ワイド': return 'ワイド'
-        if d == 'スプリット': return 'シンプル'
-        return d + " " # ★末尾にスペースを入れて親の名前と被らないようにする魔法
-
-    df['Def_Category'] = df['Def_Original'].apply(map_category)
-    df['Def_Detail_3rd'] = df['Def_Original'].apply(map_detail)
+    # 3重円用の階層データ
+    df['Def_Category'] = df['Def_Original'].replace({'ワイド': 'スプリット'})
+    df['Def_Detail_3rd'] = df['Def_Original'].apply(lambda d: 'シンプル' if d == 'スプリット' else d + " ")
     df['Year'] = df['Datetime'].dt.year
+    df['Month'] = df['Datetime'].dt.month
+    df['Day'] = df['Datetime'].dt.day
     return df
 
 df = load_data()
-
-# 🎯 デフォルト年を2026年に設定
 years = sorted(df['Year'].unique())
 default_year = 2026 if 2026 in years else years[-1]
-default_index = years.index(default_year)
-selected_year = st.selectbox("📅 観測年", years, index=default_index)
-
+selected_year = st.selectbox("📅 観測年", years, index=years.index(default_year))
 year_df = df[df['Year'] == selected_year]
-type_order_map = {t: i for i, t in enumerate(type_order)}
 
 # --- 📊 1. 上段：2重/3重円グラフ ---
 col1, col2 = st.columns(2)
-
 with col1:
     st.subheader("タイプ × 権威")
     sb1 = year_df.groupby(['Type_Clean', 'Auth_Clean']).size().reset_index(name='count')
-    sb1 = sb1[sb1['count'] > 0]
-    sb1['sort_val'] = sb1['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
-    sb1 = sb1.sort_values('sort_val').drop(columns=['sort_val'])
-    
-    fig1 = px.sunburst(sb1, path=['Type_Clean', 'Auth_Clean'], values='count',
-                       color='Type_Clean', color_discrete_map=color_map)
+    fig1 = px.sunburst(sb1, path=['Type_Clean', 'Auth_Clean'], values='count', color='Type_Clean', color_discrete_map=color_map)
     st.plotly_chart(fig1, use_container_width=True)
-
 with col2:
     st.subheader("タイプ × 定義カテゴリ × 詳細")
     sb2 = year_df.groupby(['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], dropna=False).size().reset_index(name='count')
-    sb2 = sb2[sb2['count'] > 0]
-    sb2['sort_val'] = sb2['Type_Clean'].map(lambda x: type_order_map.get(x, 99))
-    sb2 = sb2.sort_values('sort_val').drop(columns=['sort_val'])
-    
-    fig2 = px.sunburst(sb2, path=['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], values='count',
-                       color='Type_Clean', color_discrete_map=color_map)
+    fig2 = px.sunburst(sb2, path=['Type_Clean', 'Def_Category', 'Def_Detail_3rd'], values='count', color='Type_Clean', color_discrete_map=color_map)
     st.plotly_chart(fig2, use_container_width=True)
 
-# --- 📝 2. 下段：着色されたタイムライン・ログ ---
+# --- 📊 2. 中段：タイプ別定義型百分率棒グラフ ---
+st.divider()
+st.subheader("📊 タイプ別：定義型百分率 (Reflector除く)")
+
+def plot_type_bar(target_type, container):
+    target_df = year_df[year_df['Type_Clean'] == target_type]
+    if target_df.empty: return
+    counts = target_df['Def_Original'].value_counts(normalize=True).reset_index()
+    counts.columns = ['Def', 'Percentage']
+    counts['Percentage'] *= 100
+    fig = px.bar(counts, y='Def', x='Percentage', orientation='h', title=f"{target_type} の定義型分布",
+                 text=counts['Percentage'].apply(lambda x: f'{x:.1f}%'),
+                 color='Def', color_discrete_map=color_map)
+    fig.update_layout(showlegend=False, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title=None)
+    container.plotly_chart(fig, use_container_width=True)
+
+bar_col1, bar_col2 = st.columns(2)
+plot_type_bar("MG", bar_col1)
+plot_type_bar("PG", bar_col2)
+plot_type_bar("P", bar_col1)
+plot_type_bar("M", bar_col2)
+
+# --- 📊 3. 中段：ALL全体グラフ ---
+st.divider()
+st.subheader("🌐 ALL：全体統計")
+all_col1, all_col2 = st.columns(2)
+
+with all_col1:
+    st.write("▼ 全体：定義型（スプリット詳細順）")
+    # 順番を指定して集計
+    def_order = ["シングル", "スプリット", "ワイド", "トリプル", "クアドルプル"]
+    all_def = year_df['Def_Original'].value_counts(normalize=True).reindex(def_order).fillna(0).reset_index()
+    all_def.columns = ['Def', 'Percentage']
+    all_def['Percentage'] *= 100
+    fig_all_def = px.bar(all_def, x='Percentage', y='Def', orientation='h', text=all_def['Percentage'].apply(lambda x: f'{x:.1f}%'),
+                         color='Def', color_discrete_map=color_map)
+    fig_all_def.update_layout(showlegend=False, height=250, margin=dict(t=10, b=10, l=10, r=10))
+    st.plotly_chart(fig_all_def, use_container_width=True)
+
+with all_col2:
+    st.write("▼ 全体：権威（多い順）")
+    all_auth = year_df['Auth_Clean'].value_counts(normalize=True).reset_index()
+    all_auth.columns = ['Auth', 'Percentage']
+    all_auth['Percentage'] *= 100
+    fig_all_auth = px.bar(all_auth, x='Percentage', y='Auth', orientation='h', text=all_auth['Percentage'].apply(lambda x: f'{x:.1f}%'),
+                          color='Auth', color_discrete_map=color_map)
+    fig_all_auth.update_layout(showlegend=False, height=250, margin=dict(t=10, b=10, l=10, r=10))
+    st.plotly_chart(fig_all_auth, use_container_width=True)
+
+# --- 📅 4. 下段：特異日カレンダー (復活！) ---
+st.divider()
+st.subheader(f"🗓️ {selected_year}年：ワイド発生マトリクス (12x31)")
+wide_days = year_df[year_df['Def_Original'] == 'ワイド'].groupby(['Month', 'Day']).size().unstack(fill_value=0)
+cal_matrix = wide_days.reindex(index=range(1, 13), columns=range(1, 32)).fillna(0)
+fig_cal = px.imshow(cal_matrix, labels=dict(x="日", y="月", color="ワイド"), x=list(range(1, 32)), y=list(range(1, 13)),
+                    color_continuous_scale=[[0, '#1E1E1E'], [1, '#00BFFF']], aspect="auto")
+fig_cal.update_yaxes(autorange="reversed", dtick=1)
+fig_cal.update_xaxes(dtick=1)
+st.plotly_chart(fig_cal, use_container_width=True)
+
+# --- 📜 5. 最下段：タイムライン・ログ ---
 st.divider()
 st.subheader("📜 タイムライン・ログ")
-
-# 表示用データに「原因」を復活
 log_display = pd.DataFrame({
     '日時': year_df['Datetime'].dt.strftime('%m/%d %H:%M'),
     'Type': year_df['Type_Clean'],
     '定義型': year_df['Def_Original'],
     '権威': year_df['Auth_Clean'],
-    'トリガー(原因)': year_df['Cause_Info']
+    'トリガー': year_df['Cause_Info']
 })
-
 def style_log(row):
     styles = [''] * len(row)
-    t = row['Type']
-    if t in color_map:
-        styles[1] = f'background-color: {color_map[t]}; color: white; font-weight: bold;'
-    if row['定義型'] == 'ワイド':
-        styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold; font-size: 1.1em;'
+    if row['Type'] in color_map: styles[1] = f'background-color: {color_map[row["Type"]]}; color: white; font-weight: bold;'
+    if row['定義型'] == 'ワイド': styles[2] = f'color: {color_map["ワイド"]}; font-weight: bold;'
     return styles
-
-# use_container_width=False にして、無駄な横幅の広がりを抑える
-st.dataframe(log_display.style.apply(style_log, axis=1), use_container_width=False, height=500)
+st.dataframe(log_display.style.apply(style_log, axis=1), use_container_width=False, height=400)
