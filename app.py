@@ -63,33 +63,38 @@ def clean_def(d):
     return '不明(定義)'
 
 @st.cache_data
+@st.cache_data
 def load_data():
     df = pd.read_csv('HD_Special_Dictionary.csv')
+    
+    # 🔍 V1の賢い「列名自動検索システム」を復活！
     time_col = [c for c in df.columns if 'time' in c.lower() or '日時' in c][0]
+    type_col = [c for c in df.columns if 'type' in c.lower() or 'タイプ' in c][0]
+    auth_col = [c for c in df.columns if 'auth' in c.lower() or '権威' in c][0]
+    def_col = [c for c in df.columns if 'def' in c.lower() or '定義' in c][0]
+    
     df['Datetime'] = pd.to_datetime(df[time_col])
     
-    # 基本の変換
-    df['Type_Clean'] = df.iloc[:, 1].apply(clean_type)
-    df['Auth_Clean'] = df.iloc[:, 2].apply(clean_auth)
-    df['Def_Original'] = df.iloc[:, 3].apply(clean_def)
+    # 基本の変換（検索した列名を使って正確に翻訳！）
+    df['Type_Clean'] = df[type_col].apply(clean_type)
+    df['Auth_Clean'] = df[auth_col].apply(clean_auth)
+    df['Def_Original'] = df[def_col].apply(clean_def)
 
-    # ❶-(2) 3重円用の階層データ作成ロジック（神機能！）
+    # ❶-(2) 3重円用の階層データ作成ロジック
     def map_category(d):
-        if d in ['ワイド', 'スプリット']: return 'スプリット' # ワイドとシンプルを親でまとめる
+        if d in ['ワイド', 'スプリット']: return 'スプリット'
         return d
 
     def map_detail(d):
         if d == 'ワイド': return 'ワイド'
         if d == 'スプリット': return 'シンプル'
-        return None # ★ここがポイント！Noneにすることで、他は2重円でストップします
+        return None
 
     df['Def_Category'] = df['Def_Original'].apply(map_category)
     df['Def_Detail_3rd'] = df['Def_Original'].apply(map_detail)
     
     df['Year'] = df['Datetime'].dt.year
     return df
-
-df = load_data()
 
 # 🎯 デフォルト年を2026年に設定（なければ最新年）
 years = sorted(df['Year'].unique())
