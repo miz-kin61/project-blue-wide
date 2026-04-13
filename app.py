@@ -98,7 +98,9 @@ p_dict = {
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv('HD_Master_Archive_1900_2043.csv')
+        # ★ ここを .zip に書き換えるだけ！ 
+        # PandasはZIPを自動で解凍して中身を読んでくれます。
+        df = pd.read_csv('HD_Master_Archive_1900_2043.zip') 
     except:
         df = pd.read_csv('HD_Special_Dictionary.csv')
     
