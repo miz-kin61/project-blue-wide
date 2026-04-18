@@ -495,3 +495,4 @@ st.download_button(
     data=summary_text.encode('utf-8'),
     file_name=f"HD_24H_{selected_date.strftime('%Y%m%d')}_summary.txt",
     mime='text/plain'
+)
